@@ -5,8 +5,8 @@ import random
 pygame.init()
 
 # Configuración de la ventana
-ancho_ventana = 900
-alto_ventana = 700
+ancho_ventana = 1900
+alto_ventana = 1020
 ventana = pygame.display.set_mode((ancho_ventana, alto_ventana))
 pygame.display.set_caption("Space Invaders")
 
@@ -18,11 +18,13 @@ ROJO = (255, 0, 0)
 AMARILLO = (255, 255, 0)
 MORADO = (255, 0, 255)
 ROSA = (255, 0, 210)
+BLANCO = (255, 255, 255)
+naranga = (255, 134, 51)
 
 # Contador de oleadas
 oleada = 1
 # Vidas
-vidas = 3
+vidas = 100
 
 # Clase del jugador
 class Jugador:
@@ -31,14 +33,13 @@ class Jugador:
         self.imagen.fill(VERDE)
         self.rect = self.imagen.get_rect()
         self.rect.center = (ancho_ventana // 2, alto_ventana - 50)
+        self.cooldown_disparo = 250  # Cooldown del disparo del jugador
+        self.tiempo_ultimo_disparo = 0  # Inicializar tiempo del último disparo
+        self.tiempo_invulnerable = 0  # Inicializar tiempo de invulnerabilidad
 
     def mover(self, dx):
         self.rect.x += dx
-        # Limitar el movimiento dentro de la ventana
-        if self.rect.x < 0:
-            self.rect.x = 0
-        if self.rect.x > ancho_ventana - self.rect.width:
-            self.rect.x = ancho_ventana - self.rect.width
+        self.rect.x = max(0, min(self.rect.x, ancho_ventana - self.rect.width))
 
     def dibujar(self, superficie):
         superficie.blit(self.imagen, self.rect)
@@ -48,13 +49,10 @@ class Bala:
     def __init__(self, x, y):
         self.imagen = pygame.Surface((5, 10))
         self.imagen.fill(AZUL)
-        self.rect = self.imagen.get_rect()
-        self.rect.centerx = x
-        self.rect.bottom = y
-        self.move_speed = 10
+        self.rect = self.imagen.get_rect(center=(x, y))
 
     def mover(self):
-        self.rect.y -= self.move_speed
+        self.rect.y -= 10
 
     def dibujar(self, superficie):
         superficie.blit(self.imagen, self.rect)
@@ -64,13 +62,10 @@ class BalaEnemiga:
     def __init__(self, x, y):
         self.imagen = pygame.Surface((5, 10))
         self.imagen.fill(ROSA)
-        self.rect = self.imagen.get_rect()
-        self.rect.centerx = x
-        self.rect.bottom = y
-        self.move_speed = 5
+        self.rect = self.imagen.get_rect(center=(x, y))
 
     def mover(self):
-        self.rect.y += self.move_speed
+        self.rect.y += 5
 
     def dibujar(self, superficie):
         superficie.blit(self.imagen, self.rect)
@@ -78,56 +73,87 @@ class BalaEnemiga:
 # Clase de los enemigos
 class Enemigo:
     def __init__(self):
+        self.hp = self.establecer_hp()
+        self.color_original = ROJO if oleada < 5 else AMARILLO
         self.imagen = pygame.Surface((50, 50))
-        self.imagen.fill(ROJO)
+        self.imagen.fill(self.color_original)
         self.rect = self.imagen.get_rect()
         self.rect.x = random.randint(0, ancho_ventana - self.rect.width)
         self.rect.y = random.randint(50, 150)
-        self.move_speed = 1  # Velocidad de movimiento hacia abajo
+        self.cooldown_disparo = 2000
         self.tiempo_ultimo_disparo = 0
-        self.cooldown_disparo = 2000  # Tiempo en milisegundos para disparar
+        self.tiempo_dano = 0  # Para almacenar el tiempo en que se recibió daño
+
+    def establecer_hp(self):
+        return 2 
+
+    def perder_vida(self):
+        self.hp -= 1
+        self.tiempo_dano = pygame.time.get_ticks()  # Guardar el tiempo de daño
+        if self.hp == 0:
+            return True  # Indica que el enemigo debe ser eliminado
+        return False
 
     def mover(self, jugador, estado_juego):
-        self.rect.y += self.move_speed  # Mover hacia abajo
-        # Verificar si el enemigo ha llegado al final de la pantalla
+        self.rect.y += 0.5
         if self.rect.y > alto_ventana:
-            estado_juego['perdido'] = True  # Marcar el juego como perdido
-            estado_juego['corriendo'] = False  # Terminar el bucle del juego
-            return True  # Retornar verdadero si ha llegado al final
-        # Verificar colisión con el jugador
+            estado_juego['perdido'] = True
+            estado_juego['corriendo'] = False
+            return True
         if self.rect.colliderect(jugador.rect):
             estado_juego['perdido'] = True
             estado_juego['corriendo'] = False
-        return False  # Retornar falso si no ha llegado al final ni ha colisionado
+            return True
+        return False
 
     def disparar(self):
         return BalaEnemiga(self.rect.centerx, self.rect.bottom)
 
     def dibujar(self, superficie):
+        # Verificar si el enemigo ha recibido daño y cambiar su color temporalmente
+        if self.tiempo_dano > 0 and pygame.time.get_ticks() - self.tiempo_dano < 500:
+            self.imagen.fill(BLANCO)  # Colorear de blanco
+        else:
+            self.imagen.fill(self.color_original)  # Restaurar color original
         superficie.blit(self.imagen, self.rect)
+
+class Bust:
+    def __init__(self):
+        self.imagen = pygame.Surface((20, 20))
+        self.imagen.fill(naranga)
+        self.rect = self.imagen.get_rect()
+        self.rect.x = random.randint(0, ancho_ventana - self.rect.width)
+        self.rect.y = 0  # Comienza desde la parte superior
+        self.velocidad = 3  # Velocidad de descenso
+
+    def mover(self):
+        self.rect.y += self.velocidad
+
+    def dibujar(self, superficie):
+        superficie.blit(self.imagen, self.rect)
+
+# Agregar la lista de Busts
+busts = []
 
 # Clase del jefe
 class Jefe:
     def __init__(self):
         self.imagen = pygame.Surface((200, 50))
         self.imagen.fill(MORADO)
-        self.rect = self.imagen.get_rect()
-        self.rect.center = (ancho_ventana // 2, 50)
-        self.hp = 500  # Puntos de vida del jefe
+        self.rect = self.imagen.get_rect(center=(ancho_ventana // 2, 50))
+        self.hp = 1500
+        self.cooldown_disparo = 75
         self.tiempo_ultimo_disparo = 0
-        self.cooldown_disparo = 1000  # Tiempo en milisegundos para disparar
-        self.direccion = 1  # 1 para derecha, -1 para izquierda
-        self.velocidad = 2  # Velocidad de movimiento del jefe
+        self.direccion = 1
+        self.velocidad = 10
 
     def disparar(self):
         return BalaEnemiga(self.rect.centerx, self.rect.bottom)
 
     def mover(self):
-        # Mover el jefe
         self.rect.x += self.direccion * self.velocidad
-        # Cambiar de dirección si llega a los bordes de la ventana
         if self.rect.left < 0 or self.rect.right > ancho_ventana:
-            self.direccion *= -1  # Cambiar dirección
+            self.direccion *= -1
 
     def dibujar(self, superficie):
         superficie.blit(self.imagen, self.rect)
@@ -144,17 +170,9 @@ enemigos = crear_enemigos(5)
 balas = []
 balas_enemigas = []
 
-# Variables para el disparo
-tiempo_ultimo_disparo = 0
-cooldown_disparo = 150  # Tiempo en milisegundos CHETOS
-
 # Bucle principal del juego
 estado_juego = {'corriendo': True, 'perdido': False}
-
-# Configurar la fuente para el texto
-fuente = pygame.font.Font(None, 36)  # Fuente predeterminada, tamaño 36
-
-# Inicializar jefe como None
+fuente = pygame.font.Font(None, 36)
 jefe = None
 
 while estado_juego['corriendo']:
@@ -164,82 +182,98 @@ while estado_juego['corriendo']:
 
     # Manejo de teclas
     teclas = pygame.key.get_pressed()
-    if teclas[pygame.K_LEFT]:
-        jugador.mover(-10)
-    if teclas[pygame.K_RIGHT]:
-        jugador.mover(10)
-    if teclas[pygame.K_SPACE]:
+    if teclas[pygame.K_LEFT] or teclas[pygame.K_a]:
+        jugador.mover(-5)
+    if teclas[pygame.K_RIGHT] or teclas[pygame.K_d]:
+        jugador.mover(5)
+    
+    # Disparo del jugador
+    if teclas[pygame.K_UP] or teclas[pygame.K_SPACE] or teclas[pygame.K_w]:
         tiempo_actual = pygame.time.get_ticks()
-        if tiempo_actual - tiempo_ultimo_disparo >= cooldown_disparo:
-            # Disparar una nueva bala
+        if tiempo_actual - jugador.tiempo_ultimo_disparo >= jugador.cooldown_disparo:
             balas.append(Bala(jugador.rect.centerx, jugador.rect.top))
-            tiempo_ultimo_disparo = tiempo_actual  # Actualizar el tiempo del último disparo
+            jugador.tiempo_ultimo_disparo = tiempo_actual
 
     # Mover balas del jugador
-    for bala in balas[:]:
+    balas = [bala for bala in balas if bala.rect.y >= 0]
+    for bala in balas:
         bala.mover()
-        if bala.rect.y < 0:  # Eliminar balas que salen de la pantalla
-            balas.remove(bala)
 
     # Mover balas enemigas
-    for bala_enemiga in balas_enemigas[:]:
+    balas_enemigas = [bala for bala in balas_enemigas if bala.rect.y <= alto_ventana]
+    for bala_enemiga in balas_enemigas:
         bala_enemiga.mover()
-        if bala_enemiga.rect.y > alto_ventana:  # Eliminar balas que salen de la pantalla
-            balas_enemigas.remove(bala_enemiga)
+
+    # Mover Busts
+    for bust in busts[:]:
+        bust.mover()
+        if bust.rect.y > alto_ventana:  # Eliminar si sale de la pantalla
+            busts.remove(bust)
+
+    # Generar Busts de manera ocasional
+    if random.randint(1, 450) == 1:  # Ajusta la frecuencia de aparición
+        busts.append(Bust())
+
+    # Colisión entre Busts y el jugador
+    for bust in busts[:]:
+        if bust.rect.colliderect(jugador.rect):
+            vidas += 5  # Aumentar vida
+            jugador.cooldown_disparo = max(50, jugador.cooldown_disparo - 25)  # Reducir cooldown 
+            jugador.tiempo_invulnerable = pygame.time.get_ticks() + 5000  # los enemigos se quedan quietos por 5 segundos
+            busts.remove(bust)  # Eliminar el Bust al ser recogido
 
     # Mover enemigos
     for enemigo in enemigos[:]:
-        if enemigo.mover(jugador, estado_juego):  # Pasar el jugador y el estado del juego
-            break  # Salir del bucle de enemigos si ha llegado el final
+        if pygame.time.get_ticks() > jugador.tiempo_invulnerable:  # Solo si el jugador no está invulnerable
+            if enemigo.mover(jugador, estado_juego):
+                break
+            if pygame.time.get_ticks() - enemigo.tiempo_ultimo_disparo >= enemigo.cooldown_disparo:
+                balas_enemigas.append(enemigo.disparar())
+                enemigo.tiempo_ultimo_disparo = pygame.time.get_ticks()
 
     # Colisión entre balas del jugador y enemigos
-    for bala in balas:
+    for bala in balas[:]:
         for enemigo in enemigos[:]:
             if bala.rect.colliderect(enemigo.rect):
+                if enemigo.perder_vida():  # Verificar si el enemigo pierde vida
+                    enemigos.remove(enemigo)
                 balas.remove(bala)
-                enemigos.remove(enemigo)
-                break  # Salir del bucle de enemigos cuando se colisiona con uno
+                break
+
+    # Colisión entre balas jugador y Jefe
+    for bala in balas[:]:
+        if jefe and bala.rect.colliderect(jefe.rect):
+            jefe.hp -= 1
+            balas.remove(bala)
+            # Eliminar al jefe si su vida llega a 0
+            if jefe.hp <= 0:
+                jefe = None
 
     # Verificar si no hay enemigos
     if not enemigos:
-        oleada += 1  # Incrementar oleada
+        oleada += 1
+        jugador.cooldown_disparo = max(50, jugador.cooldown_disparo + 20)
         if (oleada % 5) == 0:
-            vidas += 1  # Aumentar el número de vidas
-        if oleada == 5:  # Si es la oleada 5, crear el jefe
             jefe = Jefe()
         else:
-            enemigos = crear_enemigos(5 + oleada)  # Crear más enemigos
+            enemigos = crear_enemigos(5 + oleada)
 
-    # Disparar balas enemigas
-    if jefe:
-        tiempo_actual = pygame.time.get_ticks()
-        if tiempo_actual - jefe.tiempo_ultimo_disparo >= (jefe.cooldown_disparo - (oleada * 50)):  # Aumentar la frecuencia de disparo
-            balas_enemigas.append(jefe.disparar())
-            jefe.tiempo_ultimo_disparo = tiempo_actual  # Actualizar el tiempo del último disparo
-
-        # Mover el jefe si está en la oleada 15 o mayor
-        if oleada >= 15:
-            jefe.mover()
-
-    # Disparar enemigos
-    for enemigo in enemigos:
-        tiempo_actual = pygame.time.get_ticks()
-        if tiempo_actual - enemigo.tiempo_ultimo_disparo >= enemigo.cooldown_disparo:
-            balas_enemigas.append(enemigo.disparar())
-            enemigo.tiempo_ultimo_disparo = tiempo_actual  # Actualizar el tiempo del último disparo
+    # Disparar balas del jefe
+    if jefe and pygame.time.get_ticks() - jefe.tiempo_ultimo_disparo >= jefe.cooldown_disparo:
+        balas_enemigas.append(jefe.disparar())
+        jefe.tiempo_ultimo_disparo = pygame.time.get_ticks()
+        jefe.mover()
 
     # Colisión entre balas enemigas y el jugador
-    for bala_enemiga in balas_enemigas:
+    for bala_enemiga in balas_enemigas[:]:
         if bala_enemiga.rect.colliderect(jugador.rect):
-            vidas -= 1  # Restar una vida al jugador
-            balas_enemigas.remove(bala_enemiga)  # Eliminar la bala enemiga que colisionó
-            if vidas <= 0:  # El jugador ha perdido
-                estado_juego['perdido'] = True  # El jugador pierde
-                estado_juego['corriendo'] = False
+            if pygame.time.get_ticks() > jugador.tiempo_invulnerable:  # Solo si no está invulnerable
+                vidas -= 1
+                balas_enemigas.remove(bala_enemiga)
+                if vidas <= 0:
+                    estado_juego['perdido'] = True
+                    estado_juego['corriendo'] = False
 
-    # Eliminar al jefe si su vida llega a 0
-    if jefe and jefe.hp <= 0:
-        jefe = None  # Eliminar al jefe
     # Dibujar todo
     ventana.fill(NEGRO)
     jugador.dibujar(ventana)
@@ -249,21 +283,29 @@ while estado_juego['corriendo']:
         bala.dibujar(ventana)
     for bala_enemiga in balas_enemigas:
         bala_enemiga.dibujar(ventana)
-
-    # Dibujar el jefe si existe
     if jefe:
         jefe.dibujar(ventana)
+    for bust in busts:
+        bust.dibujar(ventana)
 
     # Mostrar el número de oleadas y vidas en la parte superior
     texto_oleada = fuente.render(f'Oleada: {oleada}', True, AMARILLO)
-    ventana.blit(texto_oleada, (10, 10))  # Dibujar el texto en la posición (10, 10)
+    ventana.blit(texto_oleada, (10, 10))
     texto_vidas = fuente.render(f'Vidas: {vidas}', True, AMARILLO)
-    ventana.blit(texto_vidas, (10, 40))  # Dibujar el texto en la posición (10, 40)
+    ventana.blit(texto_vidas, (10, 40))
+    texto_velocidadAtaque = fuente.render(f'Velocidad de ataque: {jugador.cooldown_disparo}', True, AMARILLO)
+    ventana.blit(texto_velocidadAtaque, (10, 70))
+
+    # Mostrar HP del jefe si existe
+    if jefe:
+        textoHPJefe = fuente.render(f'HP Jefe: {jefe.hp}', True, MORADO)  
+        ventana.blit(textoHPJefe, (10, 100))
 
     # Actualizar la pantalla
     pygame.display.flip()
+
     # Controlar la velocidad de fotogramas
-    pygame.time.Clock().tick(60)
+    pygame.time.Clock().tick(85)
 
 # Mostrar mensaje de pérdida
 if estado_juego['perdido']:
